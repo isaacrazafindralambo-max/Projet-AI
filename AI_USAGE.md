@@ -17,7 +17,3 @@ ChatGPT-generated adaptations must be reviewed and tested. The model-based analy
 ## Version 3 assistance
 Prompt: « Je souhaite choisir l'hôtel avant le nombre d'avis à analyser et rendre le mode nuit plus lisible. »
 Use: ChatGPT helped refactor the Streamlit sidebar to filter by hotel before sampling and adapt the interface theme. The underlying Hugging Face models and analysis methods were not changed.
-
-
-## v6 optimization assistance
-ChatGPT assisted with a sequential model-loading implementation and a smaller sentiment batch size, to address Streamlit Cloud RAM errors without replacing model identities. The resulting code should be tested on the target host; no successful cloud run is claimed.
