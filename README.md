@@ -44,3 +44,14 @@ To update an existing GitHub repository, upload the new `app.py`, `README.md`, a
 - Overview shows the top three positively mentioned topics, ranked by positive mention count (minimum topic evidence threshold unchanged). Expand **Read what guests liked** to see up to two authentic positive reviews per topic.
 - AI Report shows authentic negative review evidence in styled, accessible cards with sentiment and topic badges. Review text is HTML-escaped; no ratings are invented.
 - The original analysis models, notebook and top-three negative recommendation logic remain unchanged.
+
+
+## Version 5 — Cloud resource optimization
+
+The sentiment and topic models are loaded once on demand for the dashboard (`@st.cache_resource`). **FLAN-T5 is not loaded until Generate report is clicked**, and then is cached for subsequent report requests. This reduces initial memory use and initial loading time, but the full report still needs enough RAM to hold all three models. No quantization or model substitution is applied, so model behavior is preserved. The old `load_models()` function remains for notebook compatibility.
+
+The deployment no longer requires `accelerate` (not used by this code). The Git ignore file prevents accidental commits of model weights, local caches, large datasets and virtual environments. `maxUploadSize = 50` MB limits accidental oversized uploads; increase it if your dataset requires more. The notebook is retained as a reproducibility reference but is not executed by Streamlit.
+
+**Important:** This is an optimization, **not a guarantee** of running within Streamlit Community Cloud limits. If the process is terminated with out-of-memory errors after clicking Generate report, the combined model footprint is still too large for the hosting tier. Possible next steps are a smaller generation model, CPU quantization (after compatibility testing), or hosting with more RAM. Do not delete the notebook or Hugging Face source references to fix RAM usage; those files are not what consumes model inference RAM.
+
+**Deployment update:** Upload `app.py`, `engine.py`, `requirements.txt`, `.gitignore`, `README.md`, and `.streamlit/config.toml` to the existing GitHub repository, keeping the folder hierarchy. Commit, wait for automatic redeployment, and test both dashboard and AI report.

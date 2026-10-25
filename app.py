@@ -5,7 +5,7 @@ import html
 import pandas as pd
 import plotly.express as px
 import streamlit as st
-from engine import clean_and_prepare_dataset, load_models, analyze_reviews, make_recommender, monthly_satisfaction, MIN_MENTIONS
+from engine import clean_and_prepare_dataset, load_analysis_models, load_generation_model, analyze_reviews, make_recommender, monthly_satisfaction, MIN_MENTIONS
 
 st.set_page_config(page_title="GetReview AI", page_icon="🏨", layout="wide", initial_sidebar_state="expanded")
 st.markdown("""<style>
@@ -65,8 +65,12 @@ def topic_evidence(df, topic, sentiment="positive", max_reviews=2):
 
 
 @st.cache_resource(show_spinner="Loading AI models (this may take several minutes)…")
-def cached_models():
-    return load_models()
+def cached_analysis_models():
+    return load_analysis_models()
+
+@st.cache_resource(show_spinner="Loading report generation model…")
+def cached_generation_model():
+    return load_generation_model()
 
 st.title("🏨 GetReview AI")
 st.caption("Hotel intelligence · Multilingual sentiment · Topic insights · Evidence-based recommendations")
@@ -113,7 +117,7 @@ signature = (file_id, hotel, int(limit))
 if analyze:
     try:
         with st.spinner("Preparing Hugging Face models…"):
-            sentiment_model, topic_model, _, _, _ = cached_models()
+            sentiment_model, topic_model = cached_analysis_models()
         bar = st.progress(0, text="Analyzing sentiments and topics…")
         analyzed, summary = analyze_reviews(
             selected_reviews.head(limit), sentiment_model, topic_model,
@@ -213,7 +217,7 @@ with tab_report:
     st.caption("Exactly the top 3 eligible negative pain points at most. Operational actions come from the original action library; FLAN-T5 generates the narrative.")
     if st.button("✨ Generate report",type="primary"):
         try:
-            _,_,tokenizer,model,device=cached_models()
+            tokenizer,model,device=cached_generation_model()
             with st.spinner("Generating report…"):
                 report=make_recommender(analyzed,summary,tokenizer,model,device)(hotel)
             st.session_state['report']=report

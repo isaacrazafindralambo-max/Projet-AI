@@ -93,15 +93,30 @@ ACTION_LIBRARY = {
     "Facilities": "Inspect maintenance, WiFi and hotel facilities."
 }
 
-def load_models():
+def load_analysis_models():
+    """Load only models needed for the initial dashboard (no FLAN-T5 yet)."""
+    # Restrict CPU thread contention on small Streamlit instances.
+    if not torch.cuda.is_available():
+        torch.set_num_threads(2)
     device = 0 if torch.cuda.is_available() else -1
     sentiment_model = pipeline("text-classification", model=MODEL_NAME, tokenizer=MODEL_NAME, device=device)
-    topic_model = SentenceTransformer(TOPIC_MODEL_NAME)
+    topic_model = SentenceTransformer(TOPIC_MODEL_NAME, device="cuda" if torch.cuda.is_available() else "cpu")
+    return sentiment_model, topic_model
+
+
+def load_generation_model():
+    """Load FLAN-T5 only when a user requests the AI report."""
     tokenizer = AutoTokenizer.from_pretrained(GENERATION_MODEL)
     model = AutoModelForSeq2SeqLM.from_pretrained(GENERATION_MODEL)
-    generation_device = "cuda" if torch.cuda.is_available() else "cpu"
-    model = model.to(generation_device).eval()
-    return sentiment_model, topic_model, tokenizer, model, generation_device
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    return tokenizer, model.to(device).eval(), device
+
+
+def load_models():
+    """Backward-compatible API for the original notebook and external callers."""
+    sentiment_model, topic_model = load_analysis_models()
+    tokenizer, model, device = load_generation_model()
+    return sentiment_model, topic_model, tokenizer, model, device
 
 
 def analyze_reviews(reviews, sentiment_model, topic_model, progress=None):
