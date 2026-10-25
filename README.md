@@ -29,3 +29,11 @@ Mandatory: `name` (hotel), `reviews.text` (review). Optional: `reviews.date` (ne
 
 ## Limitations
 Monthly metrics reflect only reviews included in the chosen analysis limit and months with valid dates. They are not representative of missing data. Model-generated sentiment and summaries may be inaccurate; verify evidence. Models may exceed free hosting memory.
+
+## Version 3 — Hotel-first selection and dark mode
+
+Select a hotel **before** choosing the maximum number of reviews. The limit is applied only to that hotel's reviews. Changing either the hotel or the limit requires running the analysis again.
+
+The interface now uses theme-aware CSS and a high-contrast dark palette in `.streamlit/config.toml`. For a different palette, edit that file; do not hardcode pale backgrounds in `app.py`. The original notebook and AI models are unchanged.
+
+To update an existing GitHub repository, upload the new `app.py`, `README.md`, and `.streamlit/config.toml` (keep the `.streamlit` folder), commit, and allow Streamlit Community Cloud to redeploy.
