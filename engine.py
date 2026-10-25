@@ -1,9 +1,6 @@
 """GetReview AI core — original Colab logic retained where possible."""
 import numpy as np
 import pandas as pd
-import torch
-from transformers import pipeline, AutoTokenizer, AutoModelForSeq2SeqLM
-from sentence_transformers import SentenceTransformer
 
 def clean_and_prepare_dataset(raw_df):
     columns = ["name", "reviews.text", "reviews.rating", "reviews.doRecommend", "categories", "province", "reviews.date"]
@@ -93,7 +90,32 @@ ACTION_LIBRARY = {
     "Facilities": "Inspect maintenance, WiFi and hotel facilities."
 }
 
+def load_sentiment_model():
+    import torch
+    from transformers import pipeline
+    torch.set_num_threads(2)
+    return pipeline("text-classification", model=MODEL_NAME, tokenizer=MODEL_NAME, device=-1)
+
+
+def load_topic_model():
+    from sentence_transformers import SentenceTransformer
+    return SentenceTransformer(TOPIC_MODEL_NAME, device="cpu")
+
+
+def load_generation_model():
+    import torch
+    from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
+    torch.set_num_threads(2)
+    tokenizer = AutoTokenizer.from_pretrained(GENERATION_MODEL)
+    model = AutoModelForSeq2SeqLM.from_pretrained(GENERATION_MODEL)
+    return tokenizer, model.to("cpu").eval(), "cpu"
+
+
 def load_models():
+    """API historique : conservée pour les utilisateurs du notebook."""
+    import torch
+    from transformers import pipeline, AutoTokenizer, AutoModelForSeq2SeqLM
+    from sentence_transformers import SentenceTransformer
     device = 0 if torch.cuda.is_available() else -1
     sentiment_model = pipeline("text-classification", model=MODEL_NAME, tokenizer=MODEL_NAME, device=device)
     topic_model = SentenceTransformer(TOPIC_MODEL_NAME)
@@ -108,9 +130,9 @@ def analyze_reviews(reviews, sentiment_model, topic_model, progress=None):
     reviews = reviews.copy()
     texts = reviews["review"].fillna("").astype(str).tolist()
     predictions = []
-    batch_size = 32
+    batch_size = 8
     for start in range(0, len(texts), batch_size):
-        predictions.extend(sentiment_model(texts[start:start + batch_size], truncation=True, max_length=512, batch_size=batch_size))
+        predictions.extend(sentiment_model(texts[start:start + batch_size], truncation=True, max_length=256, batch_size=batch_size))
         if progress:
             progress(0.5 * min(start + batch_size, len(texts)) / len(texts))
     reviews["sentiment"] = [result["label"].lower() for result in predictions]
@@ -119,7 +141,7 @@ def analyze_reviews(reviews, sentiment_model, topic_model, progress=None):
     topic_descriptions = [description for topic in topic_names for description in TOPICS[topic]]
     description_topics = [topic for topic in topic_names for _ in TOPICS[topic]]
     topic_embeddings = topic_model.encode(topic_descriptions, normalize_embeddings=True, convert_to_numpy=True, show_progress_bar=False)
-    review_embeddings = topic_model.encode(texts, batch_size=64, normalize_embeddings=True, convert_to_numpy=True, show_progress_bar=False)
+    review_embeddings = topic_model.encode(texts, batch_size=8, normalize_embeddings=True, convert_to_numpy=True, show_progress_bar=False)
     similarities = review_embeddings @ topic_embeddings.T
     topic_scores = np.column_stack([similarities[:, [i for i,t in enumerate(description_topics) if t == topic]].max(axis=1) for topic in topic_names])
     for i, topic in enumerate(topic_names):
@@ -144,6 +166,7 @@ def analyze_reviews(reviews, sentiment_model, topic_model, progress=None):
 
 
 def make_recommender(reviews, topic_summary, tokenizer, model, device):
+    import torch
     def generator(prompt, **kwargs):
         inputs = tokenizer(prompt, return_tensors="pt", truncation=True, max_length=512).to(device)
         if "max_length" not in kwargs and "max_new_tokens" not in kwargs:
