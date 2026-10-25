@@ -37,3 +37,10 @@ Select a hotel **before** choosing the maximum number of reviews. The limit is a
 The interface now uses theme-aware CSS and a high-contrast dark palette in `.streamlit/config.toml`. For a different palette, edit that file; do not hardcode pale backgrounds in `app.py`. The original notebook and AI models are unchanged.
 
 To update an existing GitHub repository, upload the new `app.py`, `README.md`, and `.streamlit/config.toml` (keep the `.streamlit` folder), commit, and allow Streamlit Community Cloud to redeploy.
+
+
+## Version 4 — Guest Favorites and evidence cards
+
+- Overview shows the top three positively mentioned topics, ranked by positive mention count (minimum topic evidence threshold unchanged). Expand **Read what guests liked** to see up to two authentic positive reviews per topic.
+- AI Report shows authentic negative review evidence in styled, accessible cards with sentiment and topic badges. Review text is HTML-escaped; no ratings are invented.
+- The original analysis models, notebook and top-three negative recommendation logic remain unchanged.

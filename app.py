@@ -1,6 +1,7 @@
 """GetReview AI — Streamlit web application, original Colab models and logic."""
 import hashlib
 import json
+import html
 import pandas as pd
 import plotly.express as px
 import streamlit as st
@@ -29,7 +30,39 @@ st.markdown("""<style>
 }
 [data-testid="stCaptionContainer"] {opacity:.9;}
 h1,h2,h3 {letter-spacing:-.025em;}
+.review-card {border:1px solid color-mix(in srgb, var(--text-color) 20%, transparent);border-radius:16px;padding:1.1rem 1.3rem;margin:.65rem 0 1rem;background:var(--secondary-background-color);}
+.review-card .review-quote {color:var(--text-color);font-size:1.02rem;line-height:1.65;margin:.8rem 0;overflow-wrap:anywhere;}
+.review-card .review-top {display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap;}
+.review-card .review-tag {display:inline-block;border:1px solid color-mix(in srgb, var(--text-color) 20%, transparent);padding:.2rem .65rem;border-radius:999px;font-size:.74rem;font-weight:700;letter-spacing:.03em;}
+.review-card .review-positive {background:rgba(16,185,129,.13);color:#10b981;border-color:rgba(16,185,129,.35);}
+.review-card .review-negative {background:rgba(239,68,68,.13);color:#fb7185;border-color:rgba(239,68,68,.35);}
+.review-card .review-topic {background:color-mix(in srgb, var(--text-color) 7%, transparent);color:var(--text-color);}
+.favorites-header {margin-top:1.4rem;}
+
 </style>""", unsafe_allow_html=True)
+
+def review_card(text, sentiment, topic):
+    """Render authentic, escaped review text; no fabricated ratings or stars."""
+    safe_text = html.escape(str(text), quote=True)
+    safe_topic = html.escape(str(topic), quote=True)
+    positive = sentiment == "positive"
+    badge = "review-positive" if positive else "review-negative"
+    label = "POSITIVE" if positive else "NEGATIVE"
+    st.markdown(f"""<div class="review-card">
+      <div class="review-top"><span class="review-tag review-topic">{safe_topic}</span>
+      <span class="review-tag {badge}">{label}</span></div>
+      <p class="review-quote">“{safe_text}”</p>
+    </div>""", unsafe_allow_html=True)
+
+
+def topic_evidence(df, topic, sentiment="positive", max_reviews=2):
+    subset = df.loc[df["sentiment"].eq(sentiment)].copy()
+    subset = subset.loc[subset["topics"].apply(lambda ts: isinstance(ts, (list, tuple, set)) and topic in ts)]
+    score_col = f"score_{topic}"
+    if score_col in subset.columns:
+        subset = subset.sort_values(score_col, ascending=False)
+    return subset.drop_duplicates(subset=["review"])["review"].head(max_reviews).tolist()
+
 
 @st.cache_resource(show_spinner="Loading AI models (this may take several minutes)…")
 def cached_models():
@@ -145,6 +178,23 @@ with tab_overview:
             st.plotly_chart(px.bar(hotel_topics.sort_values('negative'),x='negative',y='topic',orientation='h',title='Negative mentions by topic'),use_container_width=True)
         else:
             st.info("No topics detected above the similarity threshold.")
+    st.markdown("#### 💚 Guest Favorites")
+    st.caption("Top 3 most frequently praised topics among AI-classified positive reviews. Multiple topics can be detected in the same review.")
+    favorites = hotel_topics.loc[(hotel_topics["total_mentions"] >= MIN_MENTIONS) & (hotel_topics["positive"] > 0)].sort_values(["positive", "total_mentions"], ascending=False).head(3)
+    if favorites.empty:
+        st.info("Not enough positive topic mentions to identify guest favorites in this sample.")
+    else:
+        fav_cols = st.columns(len(favorites))
+        for i, (_, fav) in enumerate(favorites.iterrows()):
+            with fav_cols[i]:
+                with st.container(border=True):
+                    st.markdown(f"**#{i+1} · {fav['topic']}**")
+                    st.metric("Positive mentions", int(fav["positive"]))
+                    st.caption(f"{int(fav['total_mentions'])} total topic mentions")
+        with st.expander("💬 Read what guests liked", expanded=False):
+            for _, fav in favorites.iterrows():
+                for excerpt in topic_evidence(hotel_reviews, fav["topic"], "positive", 2):
+                    review_card(excerpt, "positive", fav["topic"])
 with tab_pain:
     st.subheader("Top 3 pain points")
     eligible = hotel_topics[(hotel_topics['total_mentions'] >= MIN_MENTIONS) & (hotel_topics['negative'] > 0)].sort_values(['negative','negative_rate'],ascending=False).head(3)
@@ -179,7 +229,8 @@ with tab_report:
                 st.markdown("**Recommended action**")
                 st.write(rec['action'])
                 st.markdown("**Guest evidence**")
-                for evidence in rec['evidence']:st.write('•',evidence)
+                for evidence in rec['evidence']:
+                    review_card(evidence, 'negative', rec['topic'])
         st.download_button("Download AI report · JSON",json.dumps(report,indent=2,ensure_ascii=False).encode(),file_name='getreview_report.json',mime='application/json')
 with tab_data:
     st.subheader("Export results")
