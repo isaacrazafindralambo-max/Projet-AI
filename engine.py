@@ -93,6 +93,18 @@ ACTION_LIBRARY = {
     "Facilities": "Inspect maintenance, WiFi and hotel facilities."
 }
 
+def load_sentiment_model():
+    """Load sentiment model alone to avoid co-resident model peaks."""
+    if not torch.cuda.is_available():
+        torch.set_num_threads(2)
+    return pipeline("text-classification", model=MODEL_NAME, tokenizer=MODEL_NAME, device=-1)
+
+
+def load_topic_model():
+    """Load topic model after sentiment model has been released."""
+    return SentenceTransformer(TOPIC_MODEL_NAME, device="cpu")
+
+
 def load_analysis_models():
     """Load only models needed for the initial dashboard (no FLAN-T5 yet)."""
     # Restrict CPU thread contention on small Streamlit instances.

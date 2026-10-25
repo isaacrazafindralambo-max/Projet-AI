@@ -55,3 +55,10 @@ The deployment no longer requires `accelerate` (not used by this code). The Git 
 **Important:** This is an optimization, **not a guarantee** of running within Streamlit Community Cloud limits. If the process is terminated with out-of-memory errors after clicking Generate report, the combined model footprint is still too large for the hosting tier. Possible next steps are a smaller generation model, CPU quantization (after compatibility testing), or hosting with more RAM. Do not delete the notebook or Hugging Face source references to fix RAM usage; those files are not what consumes model inference RAM.
 
 **Deployment update:** Upload `app.py`, `engine.py`, `requirements.txt`, `.gitignore`, `README.md`, and `.streamlit/config.toml` to the existing GitHub repository, keeping the folder hierarchy. Commit, wait for automatic redeployment, and test both dashboard and AI report.
+
+
+## v6 — sequential low-memory mode
+
+The sentiment model, topic model, and FLAN-T5 are loaded **one after another** and released after their respective task. Model IDs and original topic/action logic remain unchanged. Inference uses 8-review sentiment batches with 256-token truncation to reduce transient RAM. This can change predictions for reviews longer than 256 tokens compared with the previous 512-token setting. Model loading will be slower. No model is cached in Streamlit.
+
+**Important:** Community Cloud memory limits may still be insufficient even for one model plus PyTorch and its dependencies. This version is not a guarantee of deployment success. Inspect app logs and memory metrics if it still crashes.

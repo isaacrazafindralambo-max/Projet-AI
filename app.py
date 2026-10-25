@@ -1,11 +1,13 @@
 """GetReview AI — Streamlit web application, original Colab models and logic."""
 import hashlib
+import gc
+import torch
 import json
 import html
 import pandas as pd
 import plotly.express as px
 import streamlit as st
-from engine import clean_and_prepare_dataset, load_analysis_models, load_generation_model, analyze_reviews, make_recommender, monthly_satisfaction, MIN_MENTIONS
+from engine import clean_and_prepare_dataset, load_sentiment_model, load_topic_model, load_generation_model, analyze_reviews, make_recommender, monthly_satisfaction, MIN_MENTIONS
 
 st.set_page_config(page_title="GetReview AI", page_icon="🏨", layout="wide", initial_sidebar_state="expanded")
 st.markdown("""<style>
@@ -64,13 +66,11 @@ def topic_evidence(df, topic, sentiment="positive", max_reviews=2):
     return subset.drop_duplicates(subset=["review"])["review"].head(max_reviews).tolist()
 
 
-@st.cache_resource(show_spinner="Loading AI models (this may take several minutes)…")
-def cached_analysis_models():
-    return load_analysis_models()
+def release_model(model):
+    """Release large objects before loading the next model."""
+    del model
+    gc.collect()
 
-@st.cache_resource(show_spinner="Loading report generation model…")
-def cached_generation_model():
-    return load_generation_model()
 
 st.title("🏨 GetReview AI")
 st.caption("Hotel intelligence · Multilingual sentiment · Topic insights · Evidence-based recommendations")
@@ -116,13 +116,39 @@ with st.sidebar:
 signature = (file_id, hotel, int(limit))
 if analyze:
     try:
-        with st.spinner("Preparing Hugging Face models…"):
-            sentiment_model, topic_model = cached_analysis_models()
-        bar = st.progress(0, text="Analyzing sentiments and topics…")
-        analyzed, summary = analyze_reviews(
-            selected_reviews.head(limit), sentiment_model, topic_model,
-            lambda x: bar.progress(min(100, int(x*100)), text="Analyzing sentiments and topics…")
-        )
+        # Phase 1: classify reviews with only the sentiment model in RAM.
+        with st.spinner("Step 1/2 · Loading sentiment model…"):
+            sentiment_model = load_sentiment_model()
+        texts = selected_reviews.head(limit)["review"].fillna("").astype(str).tolist()
+        predictions = []
+        bar = st.progress(0, text="Step 1/2 · Sentiment analysis…")
+        with torch.inference_mode():
+            for start in range(0, len(texts), 8):
+                predictions.extend(sentiment_model(texts[start:start+8], truncation=True, max_length=256, batch_size=8))
+                bar.progress(int(45 * min(start+8, len(texts))/len(texts)), text="Step 1/2 · Sentiment analysis…")
+        del sentiment_model
+        gc.collect()
+
+        # Phase 2: load topic model only after the sentiment model is gone.
+        with st.spinner("Step 2/2 · Loading topic model…"):
+            topic_model = load_topic_model()
+        class SavedSentiments:
+            def __init__(self, values):
+                self.values = values
+                self.offset = 0
+            def __call__(self, batch, **kwargs):
+                n = len(batch)
+                result = self.values[self.offset:self.offset+n]
+                self.offset += n
+                return result
+        try:
+            analyzed, summary = analyze_reviews(
+                selected_reviews.head(limit), SavedSentiments(predictions), topic_model,
+                lambda x: bar.progress(min(100, 45 + int(x*55)), text="Step 2/2 · Topic analysis…")
+            )
+        finally:
+            del topic_model
+            gc.collect()
         bar.empty()
         st.session_state.update(analyzed=analyzed, summary=summary, signature=signature)
         st.session_state.pop("report", None)
@@ -217,9 +243,14 @@ with tab_report:
     st.caption("Exactly the top 3 eligible negative pain points at most. Operational actions come from the original action library; FLAN-T5 generates the narrative.")
     if st.button("✨ Generate report",type="primary"):
         try:
-            tokenizer,model,device=cached_generation_model()
-            with st.spinner("Generating report…"):
-                report=make_recommender(analyzed,summary,tokenizer,model,device)(hotel)
+            with st.spinner("Loading FLAN-T5 for this report only…"):
+                tokenizer, model, device = load_generation_model()
+            try:
+                with st.spinner("Generating report…"):
+                    report = make_recommender(analyzed,summary,tokenizer,model,device)(hotel)
+            finally:
+                del tokenizer, model
+                gc.collect()
             st.session_state['report']=report
             st.session_state['report_hotel']=hotel
         except Exception as exc:
