@@ -1,12 +1,15 @@
-# AI tools and prompts used
+# AI tools and prompts — GetReview AI
 
-The following are **actual requests from this ChatGPT conversation**, translated into English for the assignment; keep the original French wording if exact verbatim prompts are required.
+## Tools used
+- Google Colab: original notebook and model experimentation.
+- Hugging Face models: sentiment classification, multilingual sentence embeddings, FLAN-T5 generation (see README).
+- ChatGPT: adaptation of existing notebook to Streamlit, preservation of date data, month-over-month satisfaction, top-three pain points, UI improvements, and deployment instructions.
 
-1. “I have a .ipynb Python notebook made on Google Colab. I would like to turn it into an app and satisfy the following assignment requirements with as few changes as possible.”
-2. “I want an application accessible via a web link. Prepare the files and deployment while preserving as much of my code as possible.”
+## User prompts supplied to ChatGPT (translated only where necessary)
+1. "J'ai un fichier .ipynb d'un code python fait sur google collab. J'aimerais en faire une app ... en faisant le moins de modifications possible."
+2. "Je souhaite une application accessible par un lien web. Prépare les fichiers et le déploiement en conservant au maximum mon code."
+3. "fais moi un pas-a-pas détaillé"
+4. "L'overview devrait présenter également un score de satisfaction du mois avec comparaison avec le mois précédent, ainsi qu'un graphique permettant de suivre la satisfaction au cours des mois ... le rapport IA ... top 3 des pain points ... interface ... plus ergonomique et esthétique ... modifiant principalement le notebook"
 
-**How ChatGPT was used:** examined the original notebook, extracted/reused its existing functions and topic/action definitions, created a Streamlit interface and a deployment README. The generated files must be tested and reviewed by the student before submission.
-
-**Hugging Face:** the original notebook already uses three pretrained public models for sentiment analysis, topic embeddings and summary generation. These are AI models used by the app, not chat assistants used to author it.
-
-**Other assistants:** Do not claim Bard/Gemini, GitHub Copilot, or Mistral were used unless you actually use them and record their prompts.
+## Disclosure
+ChatGPT-generated adaptations must be reviewed and tested. The model-based analysis logic and operational action library originate from the supplied notebook; no claim is made that ChatGPT trained the Hugging Face models. Add any other tools and prompts actually used.

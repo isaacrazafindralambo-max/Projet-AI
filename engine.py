@@ -6,7 +6,7 @@ from transformers import pipeline, AutoTokenizer, AutoModelForSeq2SeqLM
 from sentence_transformers import SentenceTransformer
 
 def clean_and_prepare_dataset(raw_df):
-    columns = ["name", "reviews.text", "reviews.rating", "reviews.doRecommend", "categories", "province"]
+    columns = ["name", "reviews.text", "reviews.rating", "reviews.doRecommend", "categories", "province", "reviews.date"]
     for col in columns:
         if col not in raw_df.columns:
             raw_df[col] = np.nan
@@ -22,8 +22,10 @@ def clean_and_prepare_dataset(raw_df):
         "reviews.rating": "rating",
         "reviews.doRecommend": "recommended",
         "categories": "category",
-        "province": "province"
+        "province": "province",
+        "reviews.date": "date"
     })
+    prepared["date"] = pd.to_datetime(prepared["date"], errors="coerce", utc=True).dt.tz_localize(None)
     return prepared.reset_index(drop=True)
 
 TOPICS = {
@@ -186,7 +188,7 @@ def make_recommender(reviews, topic_summary, tokenizer, model, device):
             ascending=False
         ).head(3)
 
-        weaknesses = eligible.sort_values(
+        weaknesses = eligible[eligible["negative"] > 0].sort_values(
             ["negative", "negative_rate"],
             ascending=False
         ).head(3)
@@ -241,7 +243,7 @@ def make_recommender(reviews, topic_summary, tokenizer, model, device):
             }
 
         recommendations = []
-        for problem in weaknesses:
+        for problem in weaknesses[:3]:
             topic = problem["topic"]
             evidence = get_review_evidence(
                 hotel_name,
@@ -302,3 +304,17 @@ def make_recommender(reviews, topic_summary, tokenizer, model, device):
             "recommendations": recommendations
         }
     return generate_hotel_recommendations
+
+
+def monthly_satisfaction(hotel_reviews):
+    """Percentage of positive sentiment reviews per calendar month; never invent dates."""
+    if "date" not in hotel_reviews.columns:
+        return pd.DataFrame(columns=["month", "satisfaction", "reviews"])
+    valid = hotel_reviews.dropna(subset=["date"]).copy()
+    if valid.empty:
+        return pd.DataFrame(columns=["month", "satisfaction", "reviews"])
+    valid["month"] = valid["date"].dt.to_period("M").dt.to_timestamp()
+    return (valid.groupby("month").agg(
+        satisfaction=("sentiment", lambda x: round(100 * x.eq("positive").mean(), 1)),
+        reviews=("sentiment", "size")
+    ).reset_index().sort_values("month"))

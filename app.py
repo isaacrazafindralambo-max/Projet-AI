@@ -1,111 +1,163 @@
-"""GetReview AI — Streamlit interface for the original Google Colab project."""
-import io
+"""GetReview AI — Streamlit web application, original Colab models and logic."""
+import hashlib
 import json
 import pandas as pd
 import plotly.express as px
 import streamlit as st
-from engine import clean_and_prepare_dataset, load_models, analyze_reviews, make_recommender, MIN_MENTIONS
+from engine import clean_and_prepare_dataset, load_models, analyze_reviews, make_recommender, monthly_satisfaction, MIN_MENTIONS
 
-st.set_page_config(page_title="GetReview AI", page_icon="🏨", layout="wide")
-st.title("🏨 GetReview AI")
-st.caption("Turn hotel guest feedback into actionable insights — multilingual AI-powered review intelligence")
-st.info("Upload a CSV or Excel file with the original notebook columns: name, reviews.text, reviews.rating, reviews.doRecommend, categories, province. No guest data is stored intentionally by this app; avoid uploading personal or confidential information to a public demo.")
+st.set_page_config(page_title="GetReview AI", page_icon="🏨", layout="wide", initial_sidebar_state="expanded")
+st.markdown("""<style>
+.block-container {max-width:1250px;padding-top:2rem;padding-bottom:3rem;}
+[data-testid="stMetric"] {background:#f5f7fb;border:1px solid #e6eaf2;border-radius:14px;padding:18px;}
+[data-testid="stSidebar"] {background:#f8fafc;}
+h1,h2,h3 {letter-spacing:-.025em;}
+</style>""", unsafe_allow_html=True)
 
-@st.cache_resource(show_spinner="Loading the three Hugging Face models (first run may take several minutes)…")
+@st.cache_resource(show_spinner="Loading AI models (this may take several minutes)…")
 def cached_models():
     return load_models()
 
-uploaded = st.file_uploader("Upload hotel reviews", type=["csv", "xlsx", "xls"])
+st.title("🏨 GetReview AI")
+st.caption("Hotel intelligence · Multilingual sentiment · Topic insights · Evidence-based recommendations")
+with st.sidebar:
+    st.header("Workspace")
+    uploaded = st.file_uploader("Hotel reviews · CSV or Excel", type=["csv", "xlsx", "xls"])
+    st.caption("Required: name, reviews.text · For monthly insights: reviews.date")
+    st.warning("Use public or anonymized data for this demo.")
+
 if uploaded is None:
-    st.markdown("**How it works:** Upload reviews → Analyze sentiment & topics → Explore hotel dashboard → Generate AI recommendations → Export results.")
+    st.info("Start by uploading hotel reviews in the sidebar. Then run the analysis to unlock your dashboard.")
+    st.markdown("**Workflow**  ·  Upload → Analyze → Overview → Pain points → AI report → Export")
     st.stop()
+
 try:
-    if uploaded.name.lower().endswith((".xlsx", ".xls")):
-        raw = pd.read_excel(uploaded)
-    else:
-        raw = pd.read_csv(uploaded)
-    required = {"name", "reviews.text"}
-    if not required.issubset(raw.columns):
-        st.error("Missing mandatory columns: " + ", ".join(sorted(required - set(raw.columns))))
+    raw = pd.read_excel(uploaded) if uploaded.name.lower().endswith((".xlsx", ".xls")) else pd.read_csv(uploaded)
+    missing = {"name", "reviews.text"} - set(raw.columns)
+    if missing:
+        st.error("Missing required columns: " + ", ".join(sorted(missing)))
         st.stop()
     reviews = clean_and_prepare_dataset(raw)
     reviews = reviews.dropna(subset=["hotel"]).copy()
-    reviews["hotel"] = reviews["hotel"].astype(str)
     if reviews.empty:
-        st.warning("No valid hotel reviews found after cleaning.")
+        st.error("No valid hotel reviews found.")
         st.stop()
 except Exception as exc:
-    st.error(f"Could not read file: {exc}")
+    st.error(f"File could not be read: {exc}")
     st.stop()
 
-st.success(f"{len(reviews):,} reviews ready · {reviews['hotel'].nunique()} hotels")
-with st.expander("Preview cleaned data"):
-    st.dataframe(reviews.head(30), use_container_width=True)
-max_reviews = st.number_input("Maximum reviews to analyze (for a faster public demo)", min_value=1, max_value=len(reviews), value=min(100, len(reviews)), step=1)
-if st.button("🔍 Analyze reviews", type="primary"):
+file_id = hashlib.sha256(uploaded.getvalue()).hexdigest()
+with st.sidebar:
+    st.success(f"{len(reviews):,} reviews · {reviews['hotel'].nunique()} hotels")
+    limit = st.number_input("Maximum reviews to analyze", min_value=1, max_value=len(reviews), value=min(100, len(reviews)))
+    st.caption("For accurate monthly comparisons, analyze enough reviews from both months.")
+    analyze = st.button("🔍 Run AI analysis", type="primary", use_container_width=True)
+
+signature = (file_id, int(limit))
+if analyze:
     try:
-        with st.spinner("Loading AI models…"):
-            sentiment_model, topic_model, tokenizer, model, device = cached_models()
-        progress = st.progress(0, text="Analyzing reviews…")
-        analyzed, summary = analyze_reviews(reviews.head(max_reviews), sentiment_model, topic_model, lambda p: progress.progress(min(100, int(p * 100)), text="Analyzing reviews…"))
+        with st.spinner("Preparing Hugging Face models…"):
+            sentiment_model, topic_model, _, _, _ = cached_models()
+        bar = st.progress(0, text="Analyzing sentiments and topics…")
+        analyzed, summary = analyze_reviews(reviews.head(limit), sentiment_model, topic_model, lambda x: bar.progress(min(100, int(x*100)), text="Analyzing sentiments and topics…"))
+        bar.empty()
+        st.session_state.update(analyzed=analyzed, summary=summary, signature=signature)
         st.session_state.pop("report", None)
         st.session_state.pop("report_hotel", None)
-        st.session_state["analyzed"] = analyzed
-        st.session_state["summary"] = summary
-        st.session_state["file_signature"] = (uploaded.name, uploaded.size, max_reviews)
-        progress.empty()
     except Exception as exc:
         st.error(f"Analysis failed: {exc}")
         st.stop()
-
-if st.session_state.get("file_signature") != (uploaded.name, uploaded.size, max_reviews):
-    st.info("Click **Analyze reviews** to generate the dashboard.")
+if st.session_state.get("signature") != signature:
+    st.info("Click **Run AI analysis** in the sidebar to generate your dashboard.")
+    with st.expander("Preview imported data"):
+        st.dataframe(reviews.head(20), use_container_width=True)
     st.stop()
 
-analyzed = st.session_state["analyzed"]
-summary = st.session_state["summary"]
-hotel = st.selectbox("Choose a hotel", sorted(analyzed["hotel"].unique()))
-hotel_reviews = analyzed[analyzed["hotel"] == hotel]
-hotel_topics = summary[summary["hotel"] == hotel]
+analyzed, summary = st.session_state["analyzed"], st.session_state["summary"]
+with st.sidebar:
+    hotel = st.selectbox("Hotel", sorted(analyzed["hotel"].unique()))
+    st.caption("Satisfaction = share of positive AI-classified reviews (0–100%).")
+hotel_reviews = analyzed[analyzed["hotel"] == hotel].copy()
+hotel_topics = summary[summary["hotel"] == hotel].copy()
+monthly = monthly_satisfaction(hotel_reviews)
 
-st.subheader("Hotel dashboard")
-c1, c2, c3 = st.columns(3)
-c1.metric("Reviews", len(hotel_reviews))
-c2.metric("Negative reviews", int((hotel_reviews["sentiment"] == "negative").sum()))
-c3.metric("Topics detected", len(hotel_topics))
-left, right = st.columns(2)
-with left:
-    counts = hotel_reviews["sentiment"].value_counts().rename_axis("sentiment").reset_index(name="count")
-    st.plotly_chart(px.pie(counts, names="sentiment", values="count", title="Sentiment distribution"), use_container_width=True)
-with right:
-    if not hotel_topics.empty:
-        st.plotly_chart(px.bar(hotel_topics.sort_values("negative"), x="negative", y="topic", orientation="h", title="Negative mentions by topic"), use_container_width=True)
+tab_overview, tab_pain, tab_report, tab_data = st.tabs(["📊 Overview", "🎯 Pain points", "✨ AI report", "⬇️ Exports"])
+with tab_overview:
+    st.subheader(hotel)
+    a,b,c,d = st.columns(4)
+    a.metric("Reviews analyzed", len(hotel_reviews))
+    b.metric("Positive reviews", f"{100*hotel_reviews['sentiment'].eq('positive').mean():.1f}%")
+    c.metric("Negative reviews", int(hotel_reviews['sentiment'].eq('negative').sum()))
+    d.metric("Topics detected", len(hotel_topics))
+    st.markdown("#### Monthly satisfaction")
+    if monthly.empty:
+        st.info("No valid review dates. Include the **reviews.date** column to display monthly satisfaction and trends.")
     else:
-        st.info("No topics above the semantic similarity threshold.")
-
-st.subheader("AI recommendations")
-st.caption(f"Original notebook rule: at least {MIN_MENTIONS} mentions per topic before ranking. Actions are predefined; the narrative summary is generated with FLAN-T5.")
-if st.button("✨ Generate hotel report"):
-    try:
-        _, _, tokenizer, model, device = cached_models()
-        with st.spinner("Generating evidence-based report…"):
-            report = make_recommender(analyzed, summary, tokenizer, model, device)(hotel)
-        st.session_state["report"] = report
-        st.session_state["report_hotel"] = hotel
-    except Exception as exc:
-        st.error(f"Report generation failed: {exc}")
-if st.session_state.get("report_hotel") == hotel and "report" in st.session_state:
-    report = st.session_state["report"]
-    st.write("**AI summary:**", report["summary"])
-    for rec in report["recommendations"]:
-        with st.expander(f"{rec['topic']} · {rec['negative_reviews']} negative mentions", expanded=True):
-            st.write("**Suggested action:**", rec["action"])
-            st.write("**Evidence:**")
-            for evidence in rec["evidence"]:
-                st.write("•", evidence)
-    st.download_button("Download report (JSON)", json.dumps(report, indent=2, ensure_ascii=False).encode("utf-8"), file_name="getreview_report.json", mime="application/json")
-
-export = analyzed.copy()
-export["topics"] = export["topics"].apply(json.dumps)
-st.download_button("Download analyzed reviews (CSV)", export.to_csv(index=False).encode("utf-8-sig"), file_name="getreview_analysis.csv", mime="text/csv")
-st.download_button("Download topic summary (CSV)", summary.to_csv(index=False).encode("utf-8-sig"), file_name="getreview_topics.csv", mime="text/csv")
+        latest = monthly.iloc[-1]
+        prev_month = latest["month"] - pd.DateOffset(months=1)
+        previous = monthly[monthly["month"] == prev_month]
+        x,y = st.columns([1,2])
+        with x:
+            if previous.empty:
+                st.metric(f"Latest month · {latest['month']:%b %Y}", f"{latest['satisfaction']:.1f}%")
+                st.caption("No reviews for the immediately preceding month; comparison unavailable.")
+            else:
+                st.metric(f"Latest month · {latest['month']:%b %Y}", f"{latest['satisfaction']:.1f}%", f"{latest['satisfaction']-previous.iloc[0]['satisfaction']:+.1f} pp")
+                st.caption(f"Previous month: {previous.iloc[0]['satisfaction']:.1f}% · Based on {int(latest['reviews'])} reviews this month")
+        with y:
+            fig = px.line(monthly, x="month", y="satisfaction", markers=True, hover_data=["reviews"], labels={"month":"Month", "satisfaction":"Positive reviews (%)", "reviews":"Reviews"})
+            fig.update_yaxes(range=[0,100]);fig.update_layout(margin=dict(l=0,r=10,t=12,b=0),height=300)
+            st.plotly_chart(fig, use_container_width=True)
+        st.caption("Latest month with dated reviews, not necessarily the current calendar month. Only analyzed reviews are included. pp = percentage points.")
+    left,right = st.columns(2)
+    with left:
+        counts=hotel_reviews['sentiment'].value_counts().rename_axis('sentiment').reset_index(name='count')
+        st.plotly_chart(px.pie(counts, names='sentiment', values='count', title='Sentiment distribution', hole=.55), use_container_width=True)
+    with right:
+        if not hotel_topics.empty:
+            st.plotly_chart(px.bar(hotel_topics.sort_values('negative'),x='negative',y='topic',orientation='h',title='Negative mentions by topic'),use_container_width=True)
+        else:
+            st.info("No topics detected above the similarity threshold.")
+with tab_pain:
+    st.subheader("Top 3 pain points")
+    eligible = hotel_topics[(hotel_topics['total_mentions'] >= MIN_MENTIONS) & (hotel_topics['negative'] > 0)].sort_values(['negative','negative_rate'],ascending=False).head(3)
+    if eligible.empty:
+        st.info(f"No negative topics with at least {MIN_MENTIONS} mentions in this hotel sample.")
+    else:
+        for rank,(_,item) in enumerate(eligible.iterrows(),1):
+            with st.container(border=True):
+                st.markdown(f"**#{rank} · {item['topic']}**")
+                u,v=st.columns(2)
+                u.metric("Negative mentions",int(item['negative']))
+                v.metric("Negative rate",f"{item['negative_rate']:.1f}%")
+    st.caption(f"Ranking: negative mentions, then negative rate · Minimum {MIN_MENTIONS} total mentions per topic.")
+with tab_report:
+    st.subheader("AI hotel report")
+    st.caption("Exactly the top 3 eligible negative pain points at most. Operational actions come from the original action library; FLAN-T5 generates the narrative.")
+    if st.button("✨ Generate report",type="primary"):
+        try:
+            _,_,tokenizer,model,device=cached_models()
+            with st.spinner("Generating report…"):
+                report=make_recommender(analyzed,summary,tokenizer,model,device)(hotel)
+            st.session_state['report']=report
+            st.session_state['report_hotel']=hotel
+        except Exception as exc:
+            st.error(f"Report generation failed: {exc}")
+    if st.session_state.get('report_hotel')==hotel and 'report' in st.session_state:
+        report=st.session_state['report']
+        st.markdown("#### Executive summary")
+        st.write(report['summary'])
+        for idx,rec in enumerate(report['recommendations'][:3],1):
+            with st.expander(f"Priority {idx} · {rec['topic']} · {rec['negative_reviews']} negative mentions",expanded=True):
+                st.markdown("**Recommended action**")
+                st.write(rec['action'])
+                st.markdown("**Guest evidence**")
+                for evidence in rec['evidence']:st.write('•',evidence)
+        st.download_button("Download AI report · JSON",json.dumps(report,indent=2,ensure_ascii=False).encode(),file_name='getreview_report.json',mime='application/json')
+with tab_data:
+    st.subheader("Export results")
+    exported=analyzed.copy()
+    exported['topics']=exported['topics'].apply(json.dumps)
+    st.download_button("Download analyzed reviews · CSV",exported.to_csv(index=False).encode('utf-8-sig'),file_name='getreview_analysis.csv',mime='text/csv')
+    st.download_button("Download topic summary · CSV",summary.to_csv(index=False).encode('utf-8-sig'),file_name='getreview_topics.csv',mime='text/csv')
+    st.dataframe(hotel_reviews[['hotel','date','review','sentiment','topics']].head(100).assign(topics=lambda d:d.topics.astype(str)),use_container_width=True)
