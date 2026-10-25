@@ -1,0 +1,23 @@
+__pycache__/
+*.pyc
+.streamlit/secrets.toml
+*.csv
+*.xlsx
+*.xls
+*.json
+!*.ipynb
+
+# Local model downloads, temporary data, virtual environments
+.cache/
+.huggingface/
+hf_cache/
+models/
+venv/
+.venv/
+*.parquet
+*.pkl
+*.pt
+*.safetensors
+*.bin
+*.zip
+.DS_Store
