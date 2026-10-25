@@ -13,7 +13,3 @@
 
 ## Disclosure
 ChatGPT-generated adaptations must be reviewed and tested. The model-based analysis logic and operational action library originate from the supplied notebook; no claim is made that ChatGPT trained the Hugging Face models. Add any other tools and prompts actually used.
-
-## Version 3 assistance
-Prompt: « Je souhaite choisir l'hôtel avant le nombre d'avis à analyser et rendre le mode nuit plus lisible. »
-Use: ChatGPT helped refactor the Streamlit sidebar to filter by hotel before sampling and adapt the interface theme. The underlying Hugging Face models and analysis methods were not changed.

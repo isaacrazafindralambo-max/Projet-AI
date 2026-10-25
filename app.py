@@ -8,26 +8,9 @@ from engine import clean_and_prepare_dataset, load_models, analyze_reviews, make
 
 st.set_page_config(page_title="GetReview AI", page_icon="🏨", layout="wide", initial_sidebar_state="expanded")
 st.markdown("""<style>
-/* Streamlit theme-aware styling: readable in both light and dark modes. */
-.block-container {max-width:1250px;padding-top:1.7rem;padding-bottom:3rem;}
-[data-testid="stMetric"] {
-  background:var(--secondary-background-color);
-  border:1px solid color-mix(in srgb, var(--text-color) 20%, transparent);
-  border-radius:14px;padding:18px;
-}
-[data-testid="stMetricLabel"], [data-testid="stMetricValue"],
-[data-testid="stMetricDelta"] {color:var(--text-color);}
-[data-testid="stSidebar"] {
-  background:var(--secondary-background-color);
-  border-right:1px solid color-mix(in srgb, var(--text-color) 16%, transparent);
-}
-[data-testid="stSidebar"] label, [data-testid="stSidebar"] p,
-[data-testid="stSidebar"] h2 {color:var(--text-color);}
-[data-testid="stTabs"] button {color:var(--text-color);font-weight:600;}
-[data-testid="stExpander"], [data-testid="stVerticalBlockBorderWrapper"] {
-  border-color:color-mix(in srgb, var(--text-color) 20%, transparent);
-}
-[data-testid="stCaptionContainer"] {opacity:.9;}
+.block-container {max-width:1250px;padding-top:2rem;padding-bottom:3rem;}
+[data-testid="stMetric"] {background:#f5f7fb;border:1px solid #e6eaf2;border-radius:14px;padding:18px;}
+[data-testid="stSidebar"] {background:#f8fafc;}
 h1,h2,h3 {letter-spacing:-.025em;}
 </style>""", unsafe_allow_html=True)
 
@@ -65,27 +48,18 @@ except Exception as exc:
 
 file_id = hashlib.sha256(uploaded.getvalue()).hexdigest()
 with st.sidebar:
-    st.markdown("### Analysis settings")
-    hotel = st.selectbox("1 · Select a hotel", sorted(reviews["hotel"].unique()))
-    selected_reviews = reviews.loc[reviews["hotel"] == hotel].copy()
-    st.caption(f"{len(selected_reviews):,} available reviews for this hotel")
-    limit = st.number_input(
-        "2 · Maximum reviews to analyze", min_value=1,
-        max_value=len(selected_reviews), value=min(100, len(selected_reviews))
-    )
-    st.caption("The limit applies only to the selected hotel. For reliable monthly trends, include reviews from multiple months.")
+    st.success(f"{len(reviews):,} reviews · {reviews['hotel'].nunique()} hotels")
+    limit = st.number_input("Maximum reviews to analyze", min_value=1, max_value=len(reviews), value=min(100, len(reviews)))
+    st.caption("For accurate monthly comparisons, analyze enough reviews from both months.")
     analyze = st.button("🔍 Run AI analysis", type="primary", use_container_width=True)
 
-signature = (file_id, hotel, int(limit))
+signature = (file_id, int(limit))
 if analyze:
     try:
         with st.spinner("Preparing Hugging Face models…"):
             sentiment_model, topic_model, _, _, _ = cached_models()
         bar = st.progress(0, text="Analyzing sentiments and topics…")
-        analyzed, summary = analyze_reviews(
-            selected_reviews.head(limit), sentiment_model, topic_model,
-            lambda x: bar.progress(min(100, int(x*100)), text="Analyzing sentiments and topics…")
-        )
+        analyzed, summary = analyze_reviews(reviews.head(limit), sentiment_model, topic_model, lambda x: bar.progress(min(100, int(x*100)), text="Analyzing sentiments and topics…"))
         bar.empty()
         st.session_state.update(analyzed=analyzed, summary=summary, signature=signature)
         st.session_state.pop("report", None)
@@ -93,15 +67,15 @@ if analyze:
     except Exception as exc:
         st.error(f"Analysis failed: {exc}")
         st.stop()
-
 if st.session_state.get("signature") != signature:
     st.info("Click **Run AI analysis** in the sidebar to generate your dashboard.")
     with st.expander("Preview imported data"):
-        st.dataframe(selected_reviews.head(20), use_container_width=True)
+        st.dataframe(reviews.head(20), use_container_width=True)
     st.stop()
 
 analyzed, summary = st.session_state["analyzed"], st.session_state["summary"]
 with st.sidebar:
+    hotel = st.selectbox("Hotel", sorted(analyzed["hotel"].unique()))
     st.caption("Satisfaction = share of positive AI-classified reviews (0–100%).")
 hotel_reviews = analyzed[analyzed["hotel"] == hotel].copy()
 hotel_topics = summary[summary["hotel"] == hotel].copy()
@@ -132,8 +106,7 @@ with tab_overview:
                 st.caption(f"Previous month: {previous.iloc[0]['satisfaction']:.1f}% · Based on {int(latest['reviews'])} reviews this month")
         with y:
             fig = px.line(monthly, x="month", y="satisfaction", markers=True, hover_data=["reviews"], labels={"month":"Month", "satisfaction":"Positive reviews (%)", "reviews":"Reviews"})
-            fig.update_yaxes(range=[0,100], gridcolor="rgba(128,128,128,0.25)")
-            fig.update_layout(margin=dict(l=0,r=10,t=12,b=0),height=300, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font_color="rgba(155,155,155,1)")
+            fig.update_yaxes(range=[0,100]);fig.update_layout(margin=dict(l=0,r=10,t=12,b=0),height=300)
             st.plotly_chart(fig, use_container_width=True)
         st.caption("Latest month with dated reviews, not necessarily the current calendar month. Only analyzed reviews are included. pp = percentage points.")
     left,right = st.columns(2)
