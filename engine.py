@@ -1,9 +1,6 @@
 """GetReview AI core — original Colab logic retained where possible."""
 import numpy as np
 import pandas as pd
-import torch
-from transformers import pipeline, AutoTokenizer, AutoModelForSeq2SeqLM
-from sentence_transformers import SentenceTransformer
 
 def clean_and_prepare_dataset(raw_df):
     columns = ["name", "reviews.text", "reviews.rating", "reviews.doRecommend", "categories", "province", "reviews.date"]
@@ -95,6 +92,8 @@ ACTION_LIBRARY = {
 
 def load_sentiment_model():
     """Load sentiment model alone to avoid co-resident model peaks."""
+    import torch
+    from transformers import pipeline
     if not torch.cuda.is_available():
         torch.set_num_threads(2)
     return pipeline("text-classification", model=MODEL_NAME, tokenizer=MODEL_NAME, device=-1)
@@ -102,11 +101,15 @@ def load_sentiment_model():
 
 def load_topic_model():
     """Load topic model after sentiment model has been released."""
+    from sentence_transformers import SentenceTransformer
     return SentenceTransformer(TOPIC_MODEL_NAME, device="cpu")
 
 
 def load_analysis_models():
     """Load only models needed for the initial dashboard (no FLAN-T5 yet)."""
+    import torch
+    from transformers import pipeline
+    from sentence_transformers import SentenceTransformer
     # Restrict CPU thread contention on small Streamlit instances.
     if not torch.cuda.is_available():
         torch.set_num_threads(2)
@@ -118,6 +121,8 @@ def load_analysis_models():
 
 def load_generation_model():
     """Load FLAN-T5 only when a user requests the AI report."""
+    import torch
+    from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
     tokenizer = AutoTokenizer.from_pretrained(GENERATION_MODEL)
     model = AutoModelForSeq2SeqLM.from_pretrained(GENERATION_MODEL)
     device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -171,6 +176,7 @@ def analyze_reviews(reviews, sentiment_model, topic_model, progress=None):
 
 
 def make_recommender(reviews, topic_summary, tokenizer, model, device):
+    import torch
     def generator(prompt, **kwargs):
         inputs = tokenizer(prompt, return_tensors="pt", truncation=True, max_length=512).to(device)
         if "max_length" not in kwargs and "max_new_tokens" not in kwargs:

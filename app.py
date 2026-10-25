@@ -1,13 +1,10 @@
 """GetReview AI — Streamlit web application, original Colab models and logic."""
 import hashlib
 import gc
-import torch
 import json
 import html
 import pandas as pd
-import plotly.express as px
 import streamlit as st
-from engine import clean_and_prepare_dataset, load_sentiment_model, load_topic_model, load_generation_model, analyze_reviews, make_recommender, monthly_satisfaction, MIN_MENTIONS
 
 st.set_page_config(page_title="GetReview AI", page_icon="🏨", layout="wide", initial_sidebar_state="expanded")
 st.markdown("""<style>
@@ -85,6 +82,8 @@ if uploaded is None:
     st.markdown("**Workflow**  ·  Upload → Analyze → Overview → Pain points → AI report → Export")
     st.stop()
 
+from engine import clean_and_prepare_dataset, load_sentiment_model, load_topic_model, load_generation_model, analyze_reviews, make_recommender, monthly_satisfaction, MIN_MENTIONS
+
 try:
     raw = pd.read_excel(uploaded) if uploaded.name.lower().endswith((".xlsx", ".xls")) else pd.read_csv(uploaded)
     missing = {"name", "reviews.text"} - set(raw.columns)
@@ -116,6 +115,7 @@ with st.sidebar:
 signature = (file_id, hotel, int(limit))
 if analyze:
     try:
+        import torch  # Load PyTorch only when the user starts analysis.
         # Phase 1: classify reviews with only the sentiment model in RAM.
         with st.spinner("Step 1/2 · Loading sentiment model…"):
             sentiment_model = load_sentiment_model()
@@ -172,6 +172,7 @@ monthly = monthly_satisfaction(hotel_reviews)
 
 tab_overview, tab_pain, tab_report, tab_data = st.tabs(["📊 Overview", "🎯 Pain points", "✨ AI report", "⬇️ Exports"])
 with tab_overview:
+    import plotly.express as px  # Charts appear only after analysis.
     st.subheader(hotel)
     a,b,c,d = st.columns(4)
     a.metric("Reviews analyzed", len(hotel_reviews))
